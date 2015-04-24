@@ -1,4 +1,3 @@
-
 require "/home/breakthr/spettitt/scratch/scripts/fastq.rb"
 require "open4"
 fastq_files = Dir.glob(ARGV)
@@ -11,10 +10,12 @@ project = ENV["LSF_PROJECT"]
 start_clip = /\w+AGACTATCTTTC/
 end_clip = /not used/
 
+min_length = 50
 bwa = "/apps/bwa/0.7.5a/bwa"
 samtools = "/apps/samtools/1.1/bin/samtools"
-bwaindex ="/home/breakthr/spettitt/scratch/genome/human/chromosomes/Homo_sapiens.GRCh38.dna_rm.chromosome.5.fa"
-region = "5"
+#bwaindex ="/home/breakthr/spettitt/scratch/genome/human/chromosomes/Homo_sapiens.GRCh38.dna_rm.chromosome.5.fa"
+bwaindex ="/home/breakthr/spettitt/scratch/genome/hsvTK/TNP.fa"
+region = "NULL"
 
 desc "Remove primer sequence from start of fastq reads"
 task :clip => fastq_stems.map{|i| i+".fastqclip"}
@@ -30,6 +31,9 @@ task :sort => fastq_stems.map{|i| i+".sort"}
 
 desc "Pileup"
 task :bcf => fastq_stems.map{|i| i+".bcf"}
+
+desc "Generate sam files from bam files"
+task :sam => fastq_stems.map{|i| i+".sam"}
 
 desc "Cleanup temporary LSF files (.otmp and .etmp)"
 task :clean do |t|
@@ -87,6 +91,12 @@ rule('.sort' => '.bam') do |t|
 		system(command)
 	end
 end
+
+rule('.sam' => '.bam') do |t|
+	command = "#{samtools} view -m #{min_length} #{t.prerequisites[0]} > #{t.name}"
+	pid, stdin, stout, sterr = Open4::popen4 command 
+	Process::waitpid2 pid
+end 
 
 rule('.bcf' => '.sort') do |t|
 	index_command = "#{samtools} index #{t.prerequisites[0]}"	
