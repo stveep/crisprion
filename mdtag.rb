@@ -80,6 +80,10 @@ class Bio::Alignment::SAM::MDZ
 		end
 	end
 
+	def subregion(offset,length)
+		breakdown = @tag.scan(/\^[ATGC]+|\d+|[GATC]/)	
+	end
+
 end
 
 
