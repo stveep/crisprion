@@ -23,6 +23,7 @@
 require 'test/unit'
 require 'rubygems'
 require 'bio'
+require '/Users/spettitt/work/scripts/cigar/iterate_pairs'
 
 class Bio::Alignment::SAM
 	# Field names from SAM specification
@@ -52,6 +53,7 @@ class Bio::Alignment::SAM
 end
 
 class Bio::Alignment::SAM::MDZ
+	include Bio::Alignment::IteratePairs
 	attr_accessor :tag, :variants	
 	@@regexp = /MD:Z:([\w^]+)/
 	@@format = /[\w^]+/
@@ -66,22 +68,37 @@ class Bio::Alignment::SAM::MDZ
 		end
 	end
 
-	# Sums the total length of the reference sequence represented by the MD:Z tag (or part of)
+	# Sums the total length of the reference sequence represented by the MD:Z tag
 	def ref_length
-		#Need the sum of all "movement" operations (i.e. numbers) as well as any substituted bases (count 1 each)
-		if @tag =~ /^\d+$/
-			@tag.to_i
-		else
-			temp_tag = @tag.dup
-			temp_tag.gsub!(/\^/,"")  # Deletions need to be counted - sub the caret character out and count the remaining base characters
-			movements = temp_tag.split(/[GATC]+/).map(&:to_i).reduce(:+) # Sum numbers
-			deletions = temp_tag.split(/\d+/).map(&:length).reduce(:+) # Sum number of base chars
-			movements + deletions 
-		end
+		count_length(@tag)	
 	end
 
 	def subregion(offset,length)
-		breakdown = @tag.scan(/\^[ATGC]+|\d+|[GATC]/)	
+		@breakdown = @tag.scan(/\^[ATGC]+|\d+|[GATC]/) #=> array of number, deletion or base elements
+		@breakdown.map!{|a| [a,count_length(a)]}
+		# Breakdown is now an array of [operation, length] arrays
+		# Use IteratePairs mixin (from CIGAR parser)
+		new_pairs = iterate_pairs(@breakdown,offset,length)
+		# Need to also modify operator part of pair in the case of matches
+		new_pairs.map!{|a| if a[0].match(/^\d+$/) then [a[1],a[1]] else a end }	
+		new_pairs.map!{|a| a[0]}.join("")
+	end
+
+	
+	
+	private 
+	def count_length(tag)
+		#Need the sum of all "movement" operations (i.e. numbers) as well as any substituted bases (count 1 each)
+		if tag =~ /^\d+$/
+			tag.to_i
+		else
+			temp_tag = tag.dup
+			temp_tag.gsub!(/\^/,"")  # Deletions need to be counted - sub the caret character out and count the remaining base characters
+			movements = temp_tag.split(/[GATC]+/).map(&:to_i).reduce(:+) # Sum numbers
+			deletions = temp_tag.split(/\d+/).map(&:length).reduce(:+) # Sum number of base chars
+			# If either one of these is nil, to_i coerces to zero
+			movements.to_i + deletions.to_i 
+		end
 	end
 
 end
@@ -145,6 +162,13 @@ class MDZTest < Test::Unit::TestCase
 		mdz_none = Bio::Alignment::SAM::MDZ.new("MD:Z:150")
 		assert_equal(150, mdz_none.ref_length)	
 
+	end
+	
+	def test_subregion
+		mdz = Bio::Alignment::SAM::MDZ.new("MD:Z:60G0A13")
+		assert_equal("2G0A1",mdz.subregion(59,5))
+		assert_equal("G0A3",mdz.subregion(61,5))
+		assert_equal("A4",mdz.subregion(62,5))
 	end
 
 end
